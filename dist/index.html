@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Размер — стрелки на изображении</title>
+  <meta name="description" content="Добавляйте размерные стрелки на изображения, настраивайте линии и подписи и сохраняйте результат.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563eb'/%3E%3Cpath d='M7 9v14M25 9v14M7 16h18M12 12l-5 4 5 4M20 12l5 4-5 4' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="header">
+    <a class="brand" href="./" aria-label="Размер — главная"><span class="brand-icon">↔</span>Размер<span class="brand-label">РЕДАКТОР ИЗМЕРЕНИЙ</span></a>
+    <div class="header-actions"><button id="hotkeys-open" class="button" title="Настроить горячие клавиши">⌨ Хоткеи</button><button id="upload" class="button"><span aria-hidden="true">↥</span> Загрузить изображение</button><button id="export-csv" class="button" title="Все измерения: одна колонка, без единиц и заголовка" disabled><span aria-hidden="true">↓</span> Скачать CSV</button><button id="export" class="button primary" disabled><span aria-hidden="true">↓</span> Скачать PNG</button></div>
+    <input type="file" id="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" hidden>
+  </header>
+  <main class="app">
+    <section class="workspace" aria-label="Рабочее поле">
+      <div class="toolbar">
+        <div class="tool-group"><button id="select-tool" class="tool active" title="Выделить (V)" aria-label="Выделить" aria-pressed="true">↖</button><button id="arrow-tool" class="tool" title="Добавить стрелку (A)" aria-label="Добавить стрелку" aria-pressed="false" disabled>↔</button><span class="divider"></span><button id="undo" class="tool" title="Отменить (Ctrl+Z)" aria-label="Отменить" disabled>↶</button><button id="redo" class="tool" title="Повторить (Ctrl+Shift+Z)" aria-label="Повторить" disabled>↷</button></div>
+        <span id="tool-hint" class="tool-hint">Начните с изображения</span>
+        <div class="zoom-group"><button id="zoom-out" class="tool small" aria-label="Уменьшить масштаб" disabled>−</button><span id="zoom-value">100%</span><button id="zoom-in" class="tool small" aria-label="Увеличить масштаб" disabled>+</button><button id="fit" class="fit-button" disabled>Вписать</button></div>
+      </div>
+      <div id="viewport" class="viewport">
+        <div class="ruler ruler-top" aria-hidden="true"></div><div class="ruler ruler-left" aria-hidden="true"></div>
+        <div id="empty" class="empty">
+          <div class="empty-mark" aria-hidden="true"><svg width="66" height="66" viewBox="0 0 66 66" fill="none"><rect x="12" y="16" width="40" height="34" rx="5" stroke="currentColor" stroke-width="1.8"/><path d="m13 42 12-12 11 11 6-6 10 10M20 8h27M20 5v6M47 5v6M59 19v28M56 19h6M56 47h6" stroke="currentColor" stroke-width="1.8"/><circle cx="41" cy="26" r="3" stroke="currentColor" stroke-width="1.8"/></svg></div>
+          <span class="eyebrow">ОТ ИЗОБРАЖЕНИЯ К РАЗМЕРАМ</span>
+          <h1>Каждая деталь.<br>С точной подписью.</h1>
+          <p>Перетащите изображение сюда<br>и добавьте размерные стрелки поверх него.</p>
+          <button id="empty-upload" class="button primary">＋ Выбрать изображение</button>
+          <span class="file-types">PNG, JPG, WebP, GIF, BMP · до 30 МБ</span>
+          <div class="privacy"><span aria-hidden="true">⌑</span> Изображение остаётся в вашем браузере</div>
+        </div>
+        <div id="canvas-wrap" class="canvas-wrap" hidden><canvas id="canvas" aria-label="Изображение с размерными стрелками. Рисуйте и перемещайте стрелки мышью или касанием." tabindex="0"></canvas></div>
+        <div id="drop-overlay" class="drop-overlay" hidden>Отпустите, чтобы открыть изображение</div>
+      </div>
+      <footer class="statusbar"><span id="image-info">Изображение не загружено</span><span id="count-info">0 стрелок</span><span class="status-tip">A — стрелка <b>·</b> V — выделение <b>·</b> Delete — удалить</span></footer>
+    </section>
+    <aside class="inspector">
+      <div class="panel-heading"><div><span class="eyebrow">ПАРАМЕТРЫ</span><h2>Размерная стрелка</h2></div><span class="panel-icon" aria-hidden="true">↔</span></div>
+      <form id="settings" autocomplete="off">
+        <details class="settings-section scale-section" ><summary>Масштаб изображения</summary><div class="section-body">
+          <div class="field-row"><div class="font-field"><label for="scale-distance">На изображении</label><input id="scale-distance" type="number" min="0.000001" max="1000000000000" step="any" value="1"></div><div class="size-field"><label for="scale-source">Единица</label><select id="scale-source"><option value="cm">см</option><option value="px">px</option></select></div></div>
+          <div id="dpi-field"><label for="scale-dpi">Разрешение изображения, DPI</label><input id="scale-dpi" type="number" min="1" max="100000" step="any" value="96"><p class="field-help">Для сантиметров нужен DPI исходного изображения. 96 — начальное предположение, не размер на экране. Если DPI неизвестен, задайте масштаб по отрезку.</p></div>
+          <div class="field-row"><div class="font-field"><label for="scale-real">Соответствует</label><input id="scale-real" type="number" min="0.000001" max="1000000000000" step="any" value="100"></div><div class="size-field"><label for="scale-unit">Единица</label><input id="scale-unit" type="text" maxlength="24" value="µm" placeholder="µm"></div></div>
+          <button type="button" id="calibrate" class="button wide" disabled>Задать по отрезку</button>
+          <p class="field-help">Укажите известную длину в поле «Соответствует», затем проведите этот отрезок на изображении. Единицу можно задать любую; числовой масштаб задаётся в этой единице.</p>
+          <output id="scale-summary" class="scale-summary"></output><p id="scale-error" class="scale-error" role="alert" hidden></p>
+        </div></details>
+        <details class="settings-section" open><summary>Подпись</summary><div class="section-body"><label class="check-label"><input id="auto-label" type="checkbox" checked> Рассчитывать размер автоматически</label><label for="label">Текст размера</label><input id="label" type="text" maxlength="120" placeholder="Размер появится при рисовании" readonly><p id="label-help" class="field-help">Размер рассчитывается по масштабу изображения</p>
+          <label for="text-position">Расположение текста</label><select id="text-position"><option value="above">Над линией</option><option value="center">На линии</option><option value="below">Под линией</option><option value="custom">Свободная позиция</option></select>
+          <div class="field-row"><div class="font-field"><label for="font">Шрифт</label><select id="font"><option value="Arial">Arial</option><option value="Verdana">Verdana</option><option value="Georgia">Georgia</option><option value="Times New Roman">Times New Roman</option><option value="Courier New">Courier New</option></select></div><div class="size-field"><label for="font-size">Размер, px</label><input id="font-size" type="number" min="8" max="160" value="28"></div></div>
+          <label for="text-weight" class="weight-label">Толщина текста</label><select id="text-weight"><option value="400">Обычный</option><option value="500">Средний</option><option value="600">Полужирный</option><option value="700">Жирный</option><option value="800">Очень жирный</option><option value="900">Максимальный</option></select>
+        </div></details>
+        <details class="settings-section" ><summary>Линии и выноски</summary><div class="section-body"><div class="range-label"><label for="offset">Длина выноски</label><span><input id="offset-number" type="number" min="-1000" max="1000" value="64" aria-label="Длина выноски в пикселях"> px</span></div><input id="offset" type="range" min="-400" max="400" value="64"><p class="field-help">Отрицательное значение меняет сторону</p>
+          <div class="range-label"><label for="width">Толщина линии</label><span><output id="width-value">2</output> px</span></div><input id="width" type="range" min="1" max="12" step="0.5" value="2">
+          <label for="color">Цвет стрелки и текста</label><div class="colors"><button type="button" class="swatch selected" data-color="#2563eb" style="--swatch:#2563eb" aria-label="Синий"></button><button type="button" class="swatch" data-color="#171f2f" style="--swatch:#171f2f" aria-label="Графитовый"></button><button type="button" class="swatch" data-color="#ef4444" style="--swatch:#ef4444" aria-label="Красный"></button><button type="button" class="swatch" data-color="#16a34a" style="--swatch:#16a34a" aria-label="Зелёный"></button><button type="button" class="swatch" data-color="#ffffff" style="--swatch:#ffffff" aria-label="Белый"></button><div class="custom-color"><input id="color" type="color" value="#2563eb" aria-label="Свой цвет"></div></div>
+        </div></details>
+        <details class="settings-section position-section" ><summary>Положение на изображении <span>px</span></summary><div class="section-body"><div class="coordinates"><label>Начало X<input id="x1" type="number" step="1" disabled></label><label>Начало Y<input id="y1" type="number" step="1" disabled></label><label>Конец X<input id="x2" type="number" step="1" disabled></label><label>Конец Y<input id="y2" type="number" step="1" disabled></label></div><p class="field-help">Точки задают измеряемый отрезок. Круглые маркеры можно перетаскивать.</p></div></details>
+      </form>
+      <div class="panel-bottom"><button id="add" class="button primary wide" disabled>＋ Добавить стрелку</button><div class="secondary-actions"><button id="duplicate" disabled>Дублировать</button><button id="delete" class="danger" disabled>Удалить</button></div></div>
+    </aside>
+  </main>
+  <dialog id="hotkeys-dialog" aria-labelledby="hotkeys-title"><div class="dialog-heading"><h2 id="hotkeys-title">Горячие клавиши</h2><button id="hotkeys-close" class="tool" aria-label="Закрыть">×</button></div><p>Нажмите на сочетание и введите новое. Используется расположение клавиш, независимо от языка ввода.</p><div id="hotkey-list"></div><p id="hotkey-error" class="scale-error" role="alert"></p><p class="field-help">Esc — отменить ввод или закрыть окно. Shift при рисовании — горизонталь / вертикаль. Для зума удерживайте назначенную клавишу и вращайте колесо над изображением. Для перемещения перетаскивайте изображение зажатой правой кнопкой мыши (ПКМ).</p><div class="dialog-actions"><button id="hotkeys-reset" class="button">По умолчанию</button><button id="hotkeys-save" class="button primary">Сохранить</button></div></dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

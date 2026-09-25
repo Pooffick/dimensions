@@ -1,0 +1,14 @@
+{
+  "name": "razmer-image-editor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Browser image dimension editor with calibrated measurements and PNG/CSV export",
+  "scripts": {
+    "start": "node server.cjs",
+    "test": "node --test tests/measurement.test.mjs tests/editor.test.mjs",
+    "check": "node --check dist/app.js && node --check dist/measurement.mjs && node --check server.cjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

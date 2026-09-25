@@ -1,0 +1,32 @@
+# Local dependencies and test output
+node_modules/
+coverage/
+.test/
+playwright-report/
+test-results/
+
+# Local service / agent metadata (not needed to run the app)
+.openai/
+.sites-runtime/
+.codex/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Logs, archives, editor and OS files
+*.log
+*.tar.gz
+*.zip
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+
+# dist/ contains the authored application: keep it tracked.
