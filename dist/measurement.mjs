@@ -15,16 +15,36 @@ export function formatValue(value) {
 }
 export function measurementLabel(arrow,scale) { return formatValue(measuredLength(arrow,scale)) + ' ' + scale.unit; }
 
+export function measurementColumns(arrows,columnColors=[]) {
+  const groups = new Map(columnColors.map(color => [color, []]));
+  for(const arrow of arrows){
+    if(!groups.has(arrow.color))groups.set(arrow.color, []);
+    groups.get(arrow.color).push(arrow);
+  }
+  return Array.from(groups, ([color, entries]) => ({
+    color,
+    arrows: entries.sort((a,b) => (a.csvPosition ?? Number.MAX_SAFE_INTEGER) - (b.csvPosition ?? Number.MAX_SAFE_INTEGER))
+  })).filter(column => column.arrows.length);
+}
+
 // Export the displayed labels, including manual edits, without recalculating lengths.
-export function measurementsCsv(arrows,scale) {
-  return arrows.map((arrow,index)=>{
+export function measurementsCsv(arrows,scale,columnColors=[]) {
+  const columns = measurementColumns(arrows,columnColors);
+  const unit = scale?.unit?.trim();
+  const height = columns.reduce((max,column) => Math.max(max,column.arrows.length), 0);
+  const values = columns.map((column,columnIndex) => column.arrows.map((arrow,rowIndex) => {
     let label=String(arrow.label ?? '').trim().replaceAll('−','-');
-    const unit=scale?.unit?.trim();
     if(unit && label.endsWith(unit))label=label.slice(0,-unit.length).trim();
     // Accept spaced thousands, decimal comma or point, and scientific notation.
     label=label.replace(/(\d)[ \u00a0\u202f](?=\d{3}(?:[ \u00a0\u202f]\d{3})*(?:[.,]\d+)?(?:\D|$))/g,'$1');
     const numbers=label.match(/[+-]?(?:\d+(?:[.,]\d+)?|[.,]\d+)(?:[eE][+-]?\d+)?/g);
-    if(!numbers || numbers.length!==1 || !Number.isFinite(Number(numbers[0].replace(',','.'))))throw new RangeError('В подписи стрелки '+(index+1)+' должно быть одно числовое значение.');
+    if(!numbers || numbers.length!==1 || !Number.isFinite(Number(numbers[0].replace(',','.')))){
+      const position = columns.length === 1 ? `стрелки ${rowIndex+1}` : `стрелки в колонке ${columnIndex+1}, строке ${rowIndex+1}`;
+      throw new RangeError(`В подписи ${position} должно быть одно числовое значение.`);
+    }
     return numbers[0].replace(',','.');
-  }).join('\r\n')+(arrows.length?'\r\n':'');
+  }));
+  let csv = '';
+  for(let row=0;row<height;row++)csv += values.map(column => column[row] ?? '').join(',') + '\r\n';
+  return csv;
 }

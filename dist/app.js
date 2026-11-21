@@ -1,19 +1,33 @@
-import {pixelsPerReference, validScale, measurementLabel, formatValue, measurementsCsv} from './measurement.mjs';
+import {pixelsPerReference, validScale, measurementLabel, formatValue, measurementColumns, measurementsCsv} from './measurement.mjs';
 const $ = id => document.getElementById(id);
 const canvas = $('canvas'), ctx = canvas.getContext('2d'), viewport = $('viewport');
+const measurementsDialog = $('measurements-dialog'), measurementList = $('measurement-columns');
 const defaults = {label:'',autoLabel:true,font:'Arial',textWeight:400,fontSize:28,textPosition:'above',offset:64,width:2,color:'#2563eb',textDx:0,textDy:0};
 let arrows = [], selected = null, image = null, filename = '', zoom = 1, tool = 'select', drag = null, pan = null;
+let columnColors = [];
+const checkedArrows = new Set();
 let history = [], future = [], serial = 0, toastTimer, loadSerial = 0;
 const active = () => arrows.find(a => a.id === selected);
 let scale = {source:'cm',distance:1,real:100,unit:'µm',dpi:96};
 function refreshLabels(){for(const a of arrows)if(a.autoLabel)a.label=measurementLabel(a,scale);}
-const snapshot = () => JSON.stringify({arrows,selected,scale});
+const snapshot = () => JSON.stringify({arrows,selected,scale,columnColors});
 function remember() { history.push(snapshot()); if(history.length > 80) history.shift(); future = []; }
-function restore(value) { const state = JSON.parse(value); arrows = state.arrows; selected = state.selected; scale = state.scale; sync(); render(); }
+function restore(value) { const state = JSON.parse(value); arrows = state.arrows; selected = state.selected; scale = state.scale; columnColors = state.columnColors; sync(); render(); }
 function undo() { if(!history.length)return; future.push(snapshot()); restore(history.pop()); }
 function redo() { if(!future.length)return; history.push(snapshot()); restore(future.pop()); }
 function toast(message) { $('toast').textContent = message; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').hidden = true, 3600); }
-function setTool(value) { tool = value; $('select-tool').classList.toggle('active',value === 'select'); $('arrow-tool').classList.toggle('active',value === 'arrow'); $('select-tool').setAttribute('aria-pressed',value === 'select'); $('arrow-tool').setAttribute('aria-pressed',value === 'arrow'); viewport.classList.toggle('drawing',value !== 'select'); $('calibrate').setAttribute('aria-pressed',value === 'calibrate'); canvas.style.cursor=value==='select'?'default':'crosshair'; $('tool-hint').textContent = !image ? 'Начните с изображения' : value === 'calibrate' ? 'Проведите отрезок известной длины' : value === 'arrow' ? 'Проведите от начала до конца размера' : 'Перетаскивайте стрелку и её маркеры'; }
+function setTool(value) { tool = value; $('select-tool').classList.toggle('active',value === 'select'); $('arrow-tool').classList.toggle('active',value === 'arrow'); $('select-tool').setAttribute('aria-pressed',value === 'select'); $('arrow-tool').setAttribute('aria-pressed',value === 'arrow'); viewport.classList.toggle('drawing',value !== 'select'); $('calibrate').setAttribute('aria-pressed',value === 'calibrate'); canvas.style.cursor=value==='select'?'default':'crosshair'; $('tool-hint').textContent = !image ? 'Начните с изображения' : value === 'calibrate' ? 'Проведите отрезок известной длины' : value === 'arrow' ? 'Проведите от начала до конца размера' : 'Перетаскивайте стрелку и её маркеры'; syncColor(); }
+function colorTarget() { return tool === 'arrow' ? defaults : active() || defaults; }
+function syncColor() {
+  const target = colorTarget();
+  $('color').value = target.color;
+  $('color-label').textContent = target === defaults ? 'Цвет новых стрелок' : 'Цвет стрелки и текста';
+  document.querySelectorAll('.swatch').forEach(button => {
+    const current = button.dataset.color === target.color;
+    button.classList.toggle('selected',current);
+    button.setAttribute('aria-pressed',current);
+  });
+}
 function sync() {
   refreshLabels();
   for(const [id,key] of Object.entries({'scale-distance':'distance','scale-source':'source','scale-real':'real','scale-unit':'unit','scale-dpi':'dpi'})) { $(id).value=scale[key]; $(id).removeAttribute('aria-invalid'); }
@@ -21,19 +35,23 @@ function sync() {
   $('scale-summary').textContent=`${formatValue(scale.distance)} ${scale.source==='cm'?'см':'px'} = ${formatValue(scale.real)} ${scale.unit} · 1 px = ${formatValue(scale.real/pixelsPerReference(scale))} ${scale.unit}`;
   $('scale-error').hidden=true;
   const a = active(), style = a || defaults;
-  for(const [id,key] of Object.entries({label:'label',font:'font','font-size':'fontSize','text-position':'textPosition',offset:'offset','offset-number':'offset',width:'width',color:'color'})) $(id).value = style[key];
+  for(const [id,key] of Object.entries({label:'label',font:'font','font-size':'fontSize','text-position':'textPosition',offset:'offset','offset-number':'offset',width:'width'})) $(id).value = style[key];
   $('width-value').value = style.width;
   $('text-weight').value=style.textWeight || (style.bold?700:400);
   $('auto-label').checked=style.autoLabel;
   $('label').readOnly=style.autoLabel;
   $('label-help').textContent=style.autoLabel?'Длина отрезка рассчитывается по масштабу. Выноска и увеличение просмотра не влияют на размер.':'Ручная подпись: автоматический пересчёт для этой стрелки выключен.';
-  document.querySelectorAll('.swatch').forEach(b => {b.classList.toggle('selected',b.dataset.color === style.color);b.setAttribute('aria-pressed',b.dataset.color === style.color);});
+  syncColor();
   for(const k of ['x1','y1','x2','y2']) {$(k).disabled = !a; $(k).value = a ? Math.round(a[k]) : '';}
   for(const k of ['add','arrow-tool','export','fit','zoom-in','zoom-out','calibrate']) $(k).disabled = !image;
   $('duplicate').disabled = $('delete').disabled = !a;
   $('export-csv').disabled = !image || arrows.length === 0;
   $('undo').disabled = history.length === 0; $('redo').disabled = future.length === 0;
   $('count-info').textContent = `Стрелок: ${arrows.length}`;
+  const colors = new Set(arrows.map(arrow => arrow.color));
+  columnColors = columnColors.filter(color => colors.delete(color)).concat([...colors]);
+  $('measurements-open').disabled = !image;
+  if(measurementsDialog.open)drawMeasurements();
 }
 function geometry(a) {
   const dx = a.x2-a.x1, dy = a.y2-a.y1, length = Math.hypot(dx,dy) || 1;
@@ -104,7 +122,8 @@ async function loadFile(file) {
   try {
     next.src=url;await next.decode();if(request!==loadSerial)return;
     if(next.naturalWidth*next.naturalHeight>40000000 || Math.max(next.naturalWidth,next.naturalHeight)>16000)throw new Error('too-large');
-    stopPan();drag=null;image=next;filename=file.name;arrows=[];selected=null;history=[];future=[];
+    stopPan();drag=null;image=next;filename=file.name;arrows=[];selected=null;history=[];future=[];columnColors=[];
+    checkedArrows.clear();
     $('empty').hidden=true;$('canvas-wrap').hidden=false;
     $('image-info').textContent=`${filename} · ${image.naturalWidth} × ${image.naturalHeight} px`;
     fit();setTool('arrow');sync();toast('Изображение открыто. Проверьте масштаб перед измерением.');
@@ -164,13 +183,25 @@ function finishDrag(event){
   }
   const a=active();if(drag.kind==='draw'){
     if(!a || Math.hypot(a.x2-a.x1,a.y2-a.y1)*zoom<8){restore(history.pop());toast('Проведите от начала до конца стрелки, удерживая кнопку мыши.');}
-    else setTool('select');
   }
   drag=null;sync();render();
 }
 canvas.addEventListener('pointerup',finishDrag);
 canvas.addEventListener('pointercancel',event=>{if(drag && event.pointerId===drag.pointerId){const calibration=drag.kind==='calibrate';drag=null;if(!calibration && history.length)restore(history.pop());else render();}});
 function update(key,value){const a=active();if(a){remember();a[key]=value;if(key==='textPosition'){a.textDx=0;a.textDy=0;}}else defaults[key]=value;sync();render();}
+function updateColor(value) {
+  const target = colorTarget();
+  if(target.color === value)return;
+  if(target !== defaults){
+    remember();
+    const entries = measurementColumns(arrows,columnColors).find(column => column.color === value)?.arrows ?? [];
+    entries.forEach((arrow,index) => arrow.csvPosition = index);
+    target.csvPosition = entries.length;
+  }
+  target.color = value;
+  sync();
+  render();
+}
 $('settings').addEventListener('submit',e=>e.preventDefault());
 $('text-weight').addEventListener('change',e=>update('textWeight',Number(e.target.value)));
 for(const [id,key] of Object.entries({'scale-distance':'distance','scale-source':'source','scale-real':'real','scale-unit':'unit','scale-dpi':'dpi'})){
@@ -186,14 +217,15 @@ $('auto-label').addEventListener('change',e=>{const a=active();if(a)remember();(
 // Text input keeps caret position while updating the canvas.
 $('label').addEventListener('focus',()=>{if(active() && !active().autoLabel)remember();});
 $('label').addEventListener('input',e=>{if((active()||defaults).autoLabel)return;(active() || defaults).label=e.target.value;render();$('undo').disabled=!history.length;});
-for(const [id,key] of Object.entries({font:'font','text-position':'textPosition',color:'color'}))$(id).addEventListener('change',e=>update(key,e.target.value));
+for(const [id,key] of Object.entries({font:'font','text-position':'textPosition'}))$(id).addEventListener('change',e=>update(key,e.target.value));
+$('color').addEventListener('change',e=>updateColor(e.target.value));
 for(const [id,key,min,max] of [['font-size','fontSize',8,160],['offset-number','offset',-1000,1000],['x1','x1',-16000,32000],['y1','y1',-16000,32000],['x2','x2',-16000,32000],['y2','y2',-16000,32000]])$(id).addEventListener('change',e=>{const v=Number(e.target.value);if(e.target.value==='' || !Number.isFinite(v)){sync();return;}update(key,Math.max(min,Math.min(max,v)));});
 for(const [id,key] of [['offset','offset'],['width','width']]){
   let started=false;
   $(id).addEventListener('input',e=>{if(!started){if(active())remember();started=true;}(active()||defaults)[key]=Number(e.target.value);$('offset-number').value=(active()||defaults).offset;$('width-value').value=(active()||defaults).width;render();});
   $(id).addEventListener('change',()=>{started=false;sync();});
 }
-document.querySelectorAll('.swatch').forEach(b=>b.addEventListener('click',()=>update('color',b.dataset.color)));
+document.querySelectorAll('.swatch').forEach(b=>b.addEventListener('click',()=>updateColor(b.dataset.color)));
 for(const id of ['upload','empty-upload'])$(id).addEventListener('click',()=>$('file').click());
 $('file').addEventListener('change',e=>loadFile(e.target.files[0]));
 let dragDepth=0;
@@ -206,9 +238,160 @@ $('select-tool').addEventListener('click',()=>setTool('select'));
 for(const id of ['arrow-tool','add'])$(id).addEventListener('click',()=>{selected=null;setTool('arrow');sync();render();toast('Проведите стрелку на изображении. Shift — строго по горизонтали или вертикали.');});
 $('undo').addEventListener('click',undo);$('redo').addEventListener('click',redo);
 $('fit').addEventListener('click',fit);$('zoom-in').addEventListener('click',()=>changeZoom(1.25));$('zoom-out').addEventListener('click',()=>changeZoom(.8));
-function remove(){if(!active())return;remember();arrows=arrows.filter(a=>a.id!==selected);selected=null;sync();render();}
+function removeArrows(ids) {
+  if(!arrows.some(arrow => ids.has(arrow.id)))return;
+  remember();
+  arrows = arrows.filter(arrow => !ids.has(arrow.id));
+  if(ids.has(selected))selected = null;
+  sync();
+  render();
+}
+function remove(){removeArrows(new Set([selected]));}
 $('delete').addEventListener('click',remove);
-$('duplicate').addEventListener('click',()=>{const a=active();if(!a)return;remember();const copy={...a,id:++serial,x1:a.x1+20,y1:a.y1+20,x2:a.x2+20,y2:a.y2+20};arrows.push(copy);selected=copy.id;sync();render();});
+$('duplicate').addEventListener('click',()=>{const a=active();if(!a)return;remember();const copy={...a,id:++serial,x1:a.x1+20,y1:a.y1+20,x2:a.x2+20,y2:a.y2+20};delete copy.csvPosition;arrows.push(copy);selected=copy.id;sync();render();});
+
+function canMoveRows(entries,direction) {
+  return entries.some((arrow,index) => checkedArrows.has(arrow.id) && entries[index+direction] && !checkedArrows.has(entries[index+direction].id));
+}
+function moveRows(direction) {
+  const moving = measurementColumns(arrows,columnColors).filter(column => canMoveRows(column.arrows,direction));
+  if(!moving.length)return;
+  remember();
+  for(const {arrows:entries} of moving){
+    const start = direction < 0 ? 1 : entries.length-2;
+    for(let index=start;index>=0 && index<entries.length;index-=direction){
+      const next = index+direction;
+      if(checkedArrows.has(entries[index].id) && !checkedArrows.has(entries[next].id)){
+        const arrow = entries[index];
+        entries[index] = entries[next];
+        entries[next] = arrow;
+      }
+    }
+    entries.forEach((arrow,index) => arrow.csvPosition = index);
+  }
+  drawMeasurements();
+}
+function moveColumn(index,direction) {
+  const next = index+direction;
+  if(next<0 || next>=columnColors.length)return;
+  remember();
+  const color = columnColors[index];
+  columnColors[index] = columnColors[next];
+  columnColors[next] = color;
+  drawMeasurements();
+}
+function syncMeasurementActions(columns) {
+  const count = checkedArrows.size;
+  $('measurements-selection').textContent = `Выбрано ${count} из ${arrows.length}`;
+  $('measurements-all').textContent = count && count === arrows.length ? 'Снять выделение' : 'Выбрать все';
+  $('measurements-all').disabled = !arrows.length;
+  $('measurements-delete').disabled = !count;
+  $('measurements-up').disabled = !columns.some(column => canMoveRows(column.arrows,-1));
+  $('measurements-down').disabled = !columns.some(column => canMoveRows(column.arrows,1));
+  $('measurements-undo').disabled = $('undo').disabled = !history.length;
+  $('measurements-redo').disabled = $('redo').disabled = !future.length;
+}
+function drawMeasurements() {
+  const columns = measurementColumns(arrows,columnColors);
+  measurementsDialog.style.setProperty('--columns',columns.length);
+  const existing = new Set(arrows.map(arrow => arrow.id));
+  for(const id of checkedArrows)if(!existing.has(id))checkedArrows.delete(id);
+  const focusKey = document.activeElement?.dataset.measurementFocus;
+  const content = document.createDocumentFragment();
+  for(const [columnIndex,column] of columns.entries()){
+    const section = document.createElement('section');
+    section.className = 'measurement-column';
+    const header = document.createElement('div');
+    header.className = 'measurement-column-heading';
+    const swatch = document.createElement('span');
+    swatch.className = 'measurement-swatch';
+    swatch.style.backgroundColor = column.color;
+    const heading = document.createElement('h3');
+    heading.textContent = `Колонка ${columnIndex+1}`;
+    heading.title = column.color;
+    const controls = document.createElement('div');
+    controls.className = 'measurement-column-controls';
+    for(const [direction,symbol,word] of [[-1,'←','влево'],[1,'→','вправо']]){
+      const button = document.createElement('button');
+      button.className = 'tool';
+      button.textContent = symbol;
+      button.disabled = !columns[columnIndex+direction];
+      button.title = `Колонку ${columnIndex+1} ${word}`;
+      button.setAttribute('aria-label',button.title);
+      button.dataset.measurementFocus = `${column.color}-${direction}`;
+      button.addEventListener('click',() => moveColumn(columnIndex,direction));
+      controls.append(button);
+    }
+    header.append(swatch,heading,controls);
+    const list = document.createElement('ol');
+    list.setAttribute('aria-label',`${heading.textContent}, цвет ${column.color}`);
+    for(const [rowIndex,arrow] of column.arrows.entries()){
+      const row = document.createElement('li');
+      const number = document.createElement('span');
+      number.textContent = rowIndex+1;
+      number.className = 'measurement-row-number';
+      number.setAttribute('aria-hidden','true');
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = checkedArrows.has(arrow.id);
+      checkbox.setAttribute('aria-label',`Выбрать стрелку ${rowIndex+1} в колонке ${columnIndex+1}`);
+      checkbox.dataset.measurementFocus = `check-${arrow.id}`;
+      checkbox.addEventListener('change',() => {
+        if(checkbox.checked)checkedArrows.add(arrow.id);
+        else checkedArrows.delete(arrow.id);
+        syncMeasurementActions(columns);
+      });
+      const label = document.createElement('button');
+      label.className = 'measurement-label';
+      label.textContent = arrow.label.trim() || 'Без подписи';
+      label.title = label.textContent;
+      label.addEventListener('click',() => {
+        selected = arrow.id;
+        setTool('select');
+        measurementsDialog.close();
+        sync();
+        render();
+        canvas.focus({preventScroll:true});
+      });
+      row.append(number,checkbox,label);
+      list.append(row);
+    }
+    section.append(header,list);
+    content.append(section);
+  }
+  measurementList.replaceChildren(content);
+  measurementList.hidden = !columns.length;
+  $('measurements-empty').hidden = !!columns.length;
+  syncMeasurementActions(columns);
+  if(focusKey){
+    const control = measurementList.querySelector(`[data-measurement-focus="${focusKey}"]:enabled`);
+    (control ?? measurementList).focus();
+  }
+}
+function removeCheckedArrows() {
+  if(!checkedArrows.size)return;
+  removeArrows(checkedArrows);
+  if(!arrows.length)$('measurements-undo').focus();
+  else measurementList.focus();
+}
+$('measurements-open').addEventListener('click',() => {
+  checkedArrows.clear();
+  resetNavigation();
+  drawMeasurements();
+  measurementsDialog.showModal();
+});
+$('measurements-close').addEventListener('click',() => measurementsDialog.close());
+$('measurements-all').addEventListener('click',() => {
+  if(checkedArrows.size === arrows.length)checkedArrows.clear();
+  else for(const arrow of arrows)checkedArrows.add(arrow.id);
+  drawMeasurements();
+});
+$('measurements-up').addEventListener('click',() => moveRows(-1));
+$('measurements-down').addEventListener('click',() => moveRows(1));
+$('measurements-delete').addEventListener('click',removeCheckedArrows);
+$('measurements-undo').addEventListener('click',undo);
+$('measurements-redo').addEventListener('click',redo);
+
 // Custom shortcuts are device-local preferences.
 const shortcutDefaults={select:'KeyV',arrow:'KeyA',remove:'Delete',undo:'Mod+KeyZ',redo:'Mod+Shift+KeyZ',duplicate:'Mod+KeyD',fit:'KeyF',calibrate:'KeyC',zoom:'KeyZ'};
 const shortcutLabels={select:'Выделение',arrow:'Новая стрелка',remove:'Удалить стрелку',undo:'Отменить',redo:'Повторить',duplicate:'Дублировать',fit:'Вписать изображение',calibrate:'Калибровка',zoom:'Зум + колесо мыши'};
@@ -250,6 +433,15 @@ document.addEventListener('keydown',e=>{
     if(!validBinding(value) || ['Mod+KeyL','Mod+KeyR','Mod+KeyW','Mod+KeyT','Mod+KeyN','Mod+KeyP','Mod+KeyS','Alt+ArrowLeft','Alt+ArrowRight'].includes(value)){$('hotkey-error').textContent='Выберите другую клавишу: это сочетание занято браузером или не поддерживается.';return;}
     if(Object.keys(shortcutDraft).some(k=>k!==recording && shortcutDraft[k]===value)){$('hotkey-error').textContent='Это сочетание уже назначено другому действию.';return;}
     shortcutDraft[recording]=value;recording=null;$('hotkey-error').textContent='';drawShortcutRows();return;
+  }
+  if(measurementsDialog.open){
+    const value = binding(e);
+    const action = value === shortcuts.remove ? removeCheckedArrows : value === shortcuts.undo ? undo : value === shortcuts.redo ? redo : null;
+    if(action && e.code !== 'Tab' && e.code !== 'Escape'){
+      e.preventDefault();
+      if(!e.repeat)action();
+    }
+    return;
   }
   if(isEditing(e.target))return;
   pressedKeys.add(e.code);
@@ -299,11 +491,11 @@ refreshShortcutHints();
 $('export-csv').addEventListener('click',()=>{
   if(!image || !arrows.length)return;
   try{
-    const blob=new Blob([measurementsCsv(arrows,scale)],{type:'text/csv;charset=utf-8'});
+    const blob=new Blob([measurementsCsv(arrows,scale,columnColors)],{type:'text/csv;charset=utf-8'});
     const url=URL.createObjectURL(blob),link=document.createElement('a');
     link.href=url;link.download=filename.replace(/\.[^.]+$/,'')+'-измерения.csv';
     document.body.appendChild(link);link.click();link.remove();
-    setTimeout(()=>URL.revokeObjectURL(url),10000);toast('CSV подготовлен: одна колонка числовых значений.');
+    setTimeout(()=>URL.revokeObjectURL(url),10000);toast('CSV подготовлен.');
   }catch(error){toast(error instanceof RangeError ? error.message : 'Не удалось экспортировать подписи стрелок.');}
 });
 $('export').addEventListener('click',()=>{

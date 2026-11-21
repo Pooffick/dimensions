@@ -17,3 +17,23 @@ test('CSV exports current labels including manual corrections and displayed roun
   assert.throws(()=>measurementsCsv([{label:'заметка'}],scale),/стрелки 1/);
   assert.throws(()=>measurementsCsv([{label:'10–20 µm'}],scale),/одно числовое/);
 });
+
+test('CSV aligns ten measurements of each color in separate columns', () => {
+  const blue = Array.from({length:10}, (_, index) => ({color:'#2563eb',label:`${index+1} µm`}));
+  const red = Array.from({length:10}, (_, index) => ({color:'#ef4444',label:`${index+11} µm`}));
+  const expected = blue.map((_, index) => `${index+1},${index+11}\r\n`).join('');
+  assert.equal(measurementsCsv([...blue,...red],scale),expected);
+});
+
+test('CSV uses edited row and column order and fills shorter columns with empty cells', () => {
+  const blue = '#2563eb', red = '#ef4444';
+  const arrows = [
+    {color:blue,label:'2 µm',csvPosition:1},
+    {color:red,label:'10,5 µm'},
+    {color:blue,label:'1 µm',csvPosition:0},
+    {color:blue,label:'3 µm'}
+  ];
+  assert.equal(measurementsCsv(arrows,scale,[red,blue]),'10.5,1\r\n,2\r\n,3\r\n');
+  assert.equal(measurementsCsv(arrows,scale,[blue,red]),'1,10.5\r\n2,\r\n3,\r\n');
+  assert.throws(() => measurementsCsv([...arrows,{color:blue,label:'заметка'}],scale,[red,blue]),/колонке 2, строке 4/);
+});
