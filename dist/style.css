@@ -12,6 +12,19 @@
 
 .viewport.panning,.viewport.panning canvas{cursor:grabbing!important}.viewport.panning{user-select:none;touch-action:none}
 
+.csv-export { display: flex; }
+.csv-export #export-csv { border-radius: 7px 0 0 7px; }
+.csv-export #csv-settings-open { border-left: 0; border-radius: 0 7px 7px 0; padding-inline: 10px; font-size: 17px; line-height: 1; }
+.csv-export button:focus-visible { position: relative; z-index: 1; }
+#csv-dialog { width: min(430px, calc(100vw - 32px)); }
+#csv-form { margin-top: 16px; }
+#csv-form select + label { margin-top: 14px; }
+#csv-form select[aria-invalid=true] { border-color: #dc2626; }
+#csv-form .scale-error { color: #b42318; }
+.csv-example { margin-top: 18px; }
+.csv-example h3 { margin-bottom: 7px; }
+.csv-example pre { margin: 0; padding: 10px; overflow: auto; border: 1px solid var(--border); border-radius: 5px; background: #f8fafc; font-size: 13px; tab-size: 4; }
+
 .measurements-open { min-height: 36px; margin-bottom: 12px; padding-block: 7px; }
 #measurements-dialog {
   --measurement-column-width: 196px;

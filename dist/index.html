@@ -10,7 +10,15 @@
 <body>
   <header class="header">
     <a class="brand" href="./" aria-label="Размер — главная"><span class="brand-icon">↔</span>Размер<span class="brand-label">РЕДАКТОР ИЗМЕРЕНИЙ</span></a>
-    <div class="header-actions"><button id="hotkeys-open" class="button" title="Настроить горячие клавиши">⌨ Хоткеи</button><button id="upload" class="button"><span aria-hidden="true">↥</span> Загрузить изображение</button><button id="export-csv" class="button" title="Числовые значения в порядке окна «Измерения»" disabled><span aria-hidden="true">↓</span> Скачать CSV</button><button id="export" class="button primary" disabled><span aria-hidden="true">↓</span> Скачать PNG</button></div>
+    <div class="header-actions">
+      <button id="hotkeys-open" class="button" title="Настроить горячие клавиши">⌨ Хоткеи</button>
+      <button id="upload" class="button"><span aria-hidden="true">↥</span> Загрузить изображение</button>
+      <div class="csv-export">
+        <button id="export-csv" class="button" title="Числовые значения в порядке окна «Измерения»" disabled><span aria-hidden="true">↓</span> Скачать CSV</button>
+        <button id="csv-settings-open" class="button" title="Настройки CSV" aria-label="Настройки CSV" aria-haspopup="dialog">⚙</button>
+      </div>
+      <button id="export" class="button primary" disabled><span aria-hidden="true">↓</span> Скачать PNG</button>
+    </div>
     <input type="file" id="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" hidden>
   </header>
   <main class="app">
@@ -81,6 +89,45 @@
     </div>
     <div id="measurement-columns" class="measurement-columns" role="region" aria-label="Колонки измерений" tabindex="0"></div>
     <p id="measurements-empty" class="measurements-empty" hidden>На изображении пока нет стрелок.</p>
+  </dialog>
+  <dialog id="csv-dialog" aria-labelledby="csv-title">
+    <div class="dialog-heading">
+      <h2 id="csv-title">Настройки CSV</h2>
+      <button id="csv-close" class="tool" type="button" aria-label="Закрыть настройки CSV">×</button>
+    </div>
+    <form id="csv-form" autocomplete="off">
+      <label for="csv-delimiter">Разделитель ячеек</label>
+      <select id="csv-delimiter" autofocus>
+        <option value=",">Запятая (,)</option>
+        <option value=";">Точка с запятой (;)</option>
+        <option value="&#9;">Табуляция</option>
+        <option value="|">Вертикальная черта (|)</option>
+      </select>
+      <label for="csv-thousands">Разделитель разрядов</label>
+      <select id="csv-thousands" aria-describedby="csv-error">
+        <option value="">Без разделителя</option>
+        <option value=" ">Пробел</option>
+        <option value="&#160;">Неразрывный пробел</option>
+        <option value="&#8239;">Узкий неразрывный пробел</option>
+        <option value=".">Точка (.)</option>
+        <option value=",">Запятая (,)</option>
+        <option value="'">Апостроф (')</option>
+      </select>
+      <label for="csv-decimal">Разделитель целой и дробной части</label>
+      <select id="csv-decimal" aria-describedby="csv-error">
+        <option value=".">Точка (.)</option>
+        <option value=",">Запятая (,)</option>
+      </select>
+      <p id="csv-error" class="scale-error" role="alert" hidden></p>
+      <div id="csv-example" class="csv-example">
+        <h3>Пример CSV</h3>
+        <pre id="csv-preview"></pre>
+      </div>
+      <div class="dialog-actions">
+        <button id="csv-reset" class="button" type="button">По умолчанию</button>
+        <button id="csv-save" class="button primary" type="submit">Сохранить</button>
+      </div>
+    </form>
   </dialog>
   <dialog id="hotkeys-dialog" aria-labelledby="hotkeys-title"><div class="dialog-heading"><h2 id="hotkeys-title">Горячие клавиши</h2><button id="hotkeys-close" class="tool" aria-label="Закрыть">×</button></div><p>Нажмите на сочетание и введите новое. Используется расположение клавиш, независимо от языка ввода.</p><div id="hotkey-list"></div><p id="hotkey-error" class="scale-error" role="alert"></p><p class="field-help">Esc — отменить ввод или закрыть окно. Shift при рисовании — горизонталь / вертикаль. Для зума удерживайте назначенную клавишу и вращайте колесо над изображением. Для перемещения перетаскивайте изображение зажатой правой кнопкой мыши (ПКМ).</p><div class="dialog-actions"><button id="hotkeys-reset" class="button">По умолчанию</button><button id="hotkeys-save" class="button primary">Сохранить</button></div></dialog>
   <div id="toast" class="toast" role="status" hidden></div>

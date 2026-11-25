@@ -37,3 +37,22 @@ test('CSV uses edited row and column order and fills shorter columns with empty 
   assert.equal(measurementsCsv(arrows,scale,[blue,red]),'1,10.5\r\n2,\r\n3,\r\n');
   assert.throws(() => measurementsCsv([...arrows,{color:blue,label:'заметка'}],scale,[red,blue]),/колонке 2, строке 4/);
 });
+
+test('CSV formats number separators without changing precision, sign, or exponent', () => {
+  const blue = '#2563eb', red = '#ef4444';
+  const arrows = [
+    {color:blue,label:'−1 234 567,0500 µm'},
+    {color:blue,label:'+1.200e-1234 µm'},
+    {color:red,label:'9876 µm'},
+    {color:blue,label:'.0001 µm'}
+  ];
+  const settings = {delimiter:';',thousands:'\u202f',decimal:','};
+  assert.equal(measurementsCsv(arrows,scale,[red,blue],settings),'9\u202f876;-1\u202f234\u202f567,0500\r\n;+1,200e-1234\r\n;,0001\r\n');
+});
+
+test('CSV quotes cells when a number separator is also the cell delimiter', () => {
+  const arrows = [{color:'blue',label:'1234,50'},{color:'red',label:'5678'}];
+  assert.equal(measurementsCsv(arrows,null,[],{decimal:','}),'"1234,50",5678\r\n');
+  assert.equal(measurementsCsv(arrows,null,[],{thousands:','}),'"1,234.50","5,678"\r\n');
+  assert.equal(measurementsCsv(arrows,null,[],{delimiter:'\t',thousands:'.',decimal:','}),'1.234,50\t5.678\r\n');
+});

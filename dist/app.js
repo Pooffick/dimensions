@@ -1,4 +1,4 @@
-import {pixelsPerReference, validScale, measurementLabel, formatValue, measurementColumns, measurementsCsv} from './measurement.mjs';
+import {pixelsPerReference, validScale, measurementLabel, formatValue, measurementColumns, csvDefaults, measurementsCsv} from './measurement.mjs';
 const $ = id => document.getElementById(id);
 const canvas = $('canvas'), ctx = canvas.getContext('2d'), viewport = $('viewport');
 const measurementsDialog = $('measurements-dialog'), measurementList = $('measurement-columns');
@@ -424,8 +424,67 @@ $('hotkeys-dialog').addEventListener('close',()=>{recording=null;pressedKeys.cle
 $('hotkeys-dialog').addEventListener('cancel',e=>{if(recording){e.preventDefault();recording=null;drawShortcutRows();}});
 $('hotkeys-reset').addEventListener('click',()=>{shortcutDraft={...shortcutDefaults};recording=null;$('hotkey-error').textContent='';drawShortcutRows();});
 $('hotkeys-save').addEventListener('click',()=>{shortcuts={...shortcutDraft};try{localStorage.setItem('razmer.shortcuts',JSON.stringify(shortcuts));}catch{toast('Настройки применены, но браузер не разрешил их сохранить.');}refreshShortcutHints();$('hotkeys-dialog').close();});
+
+const csvDialog = $('csv-dialog');
+const csvFields = {delimiter:$('csv-delimiter'),thousands:$('csv-thousands'),decimal:$('csv-decimal')};
+const csvPreferenceKey = 'razmer.csv';
+const csvExample = [{label:'1234,50',color:'blue'},{label:'-9876,25',color:'red'}];
+let csvSettings = {...csvDefaults};
+try{
+  const saved = JSON.parse(localStorage.getItem(csvPreferenceKey));
+  if(saved){
+    for(const [key,field] of Object.entries(csvFields)){
+      if(Array.from(field.options).some(option => option.value === saved[key]))csvSettings[key] = saved[key];
+    }
+    if(csvSettings.thousands === csvSettings.decimal)csvSettings.thousands = csvDefaults.thousands;
+  }
+}catch{}
+
+function readCsvForm() {
+  return Object.fromEntries(Object.entries(csvFields).map(([key,field]) => [key,field.value]));
+}
+function updateCsvPreview() {
+  const settings = readCsvForm();
+  const conflict = settings.thousands === settings.decimal;
+  for(const field of [csvFields.thousands,csvFields.decimal]){
+    if(conflict)field.setAttribute('aria-invalid','true');
+    else field.removeAttribute('aria-invalid');
+  }
+  const error = $('csv-error');
+  error.hidden = !conflict;
+  error.textContent = conflict ? 'Для разрядов и дробной части выберите разные разделители.' : '';
+  $('csv-save').disabled = conflict;
+  $('csv-example').hidden = conflict;
+  if(!conflict)$('csv-preview').textContent = measurementsCsv(csvExample,null,[],settings).trimEnd();
+}
+function fillCsvForm(settings) {
+  for(const [key,field] of Object.entries(csvFields))field.value = settings[key];
+  updateCsvPreview();
+}
+for(const field of Object.values(csvFields))field.addEventListener('change',updateCsvPreview);
+$('csv-settings-open').addEventListener('click',() => {
+  resetNavigation();
+  fillCsvForm(csvSettings);
+  csvDialog.showModal();
+});
+$('csv-close').addEventListener('click',() => csvDialog.close());
+$('csv-reset').addEventListener('click',() => fillCsvForm(csvDefaults));
+$('csv-form').addEventListener('submit',event => {
+  event.preventDefault();
+  const settings = readCsvForm();
+  if(settings.thousands === settings.decimal)return;
+  csvSettings = settings;
+  csvDialog.close();
+  try{
+    localStorage.setItem(csvPreferenceKey,JSON.stringify(csvSettings));
+  }catch{
+    toast('Настройки CSV применены на время этой сессии. Браузер не разрешил их сохранить.');
+  }
+});
+
 function isEditing(target){return target?.isContentEditable || target?.matches?.('input,select,textarea');}
 document.addEventListener('keydown',e=>{
+  if(csvDialog.open)return;
   if($('hotkeys-dialog').open){
     if(!recording || e.code==='Escape' || e.code==='Tab')return;
     e.preventDefault();if(['ControlLeft','ControlRight','MetaLeft','MetaRight','AltLeft','AltRight','ShiftLeft','ShiftRight'].includes(e.code))return;
@@ -491,7 +550,7 @@ refreshShortcutHints();
 $('export-csv').addEventListener('click',()=>{
   if(!image || !arrows.length)return;
   try{
-    const blob=new Blob([measurementsCsv(arrows,scale,columnColors)],{type:'text/csv;charset=utf-8'});
+    const blob=new Blob([measurementsCsv(arrows,scale,columnColors,csvSettings)],{type:'text/csv;charset=utf-8'});
     const url=URL.createObjectURL(blob),link=document.createElement('a');
     link.href=url;link.download=filename.replace(/\.[^.]+$/,'')+'-измерения.csv';
     document.body.appendChild(link);link.click();link.remove();

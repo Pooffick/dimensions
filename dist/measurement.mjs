@@ -27,8 +27,20 @@ export function measurementColumns(arrows,columnColors=[]) {
   })).filter(column => column.arrows.length);
 }
 
+export const csvDefaults = Object.freeze({delimiter:',',thousands:'',decimal:'.'});
+
+// The number has already been validated, so format its digits without rounding.
+function formatCsvNumber(number,delimiter,thousands,decimal) {
+  const [mantissa, exponent = ''] = number.split(/(?=[eE])/);
+  const [integer, fraction] = mantissa.split('.');
+  const grouped = thousands ? integer.replace(/\B(?=(?:\d{3})+(?!\d))/g, () => thousands) : integer;
+  const formatted = grouped + (fraction === undefined ? '' : decimal + fraction) + exponent;
+  return formatted.includes(delimiter) ? `"${formatted}"` : formatted;
+}
+
 // Export the displayed labels, including manual edits, without recalculating lengths.
-export function measurementsCsv(arrows,scale,columnColors=[]) {
+export function measurementsCsv(arrows,scale,columnColors=[],options=csvDefaults) {
+  const {delimiter=csvDefaults.delimiter,thousands=csvDefaults.thousands,decimal=csvDefaults.decimal} = options;
   const columns = measurementColumns(arrows,columnColors);
   const unit = scale?.unit?.trim();
   const height = columns.reduce((max,column) => Math.max(max,column.arrows.length), 0);
@@ -38,13 +50,14 @@ export function measurementsCsv(arrows,scale,columnColors=[]) {
     // Accept spaced thousands, decimal comma or point, and scientific notation.
     label=label.replace(/(\d)[ \u00a0\u202f](?=\d{3}(?:[ \u00a0\u202f]\d{3})*(?:[.,]\d+)?(?:\D|$))/g,'$1');
     const numbers=label.match(/[+-]?(?:\d+(?:[.,]\d+)?|[.,]\d+)(?:[eE][+-]?\d+)?/g);
-    if(!numbers || numbers.length!==1 || !Number.isFinite(Number(numbers[0].replace(',','.')))){
+    const number = numbers?.length === 1 ? numbers[0].replace(',','.') : '';
+    if(!number || !Number.isFinite(Number(number))){
       const position = columns.length === 1 ? `стрелки ${rowIndex+1}` : `стрелки в колонке ${columnIndex+1}, строке ${rowIndex+1}`;
       throw new RangeError(`В подписи ${position} должно быть одно числовое значение.`);
     }
-    return numbers[0].replace(',','.');
+    return formatCsvNumber(number,delimiter,thousands,decimal);
   }));
   let csv = '';
-  for(let row=0;row<height;row++)csv += values.map(column => column[row] ?? '').join(',') + '\r\n';
+  for(let row=0;row<height;row++)csv += values.map(column => column[row] ?? '').join(delimiter) + '\r\n';
   return csv;
 }

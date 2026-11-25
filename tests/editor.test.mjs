@@ -3,13 +3,16 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import * as measurement from '../dist/measurement.mjs';
-test('editor recalculates, calibrates and restores scale through undo',()=>{
+const source=fs.readFileSync(new URL('../dist/app.js',import.meta.url),'utf8').replace(/^import[^\n]+\n/,'');
+
+function editorContext(localStorage){
  const nodes=new Map(),documentEvents={},windowEvents={};
  const context2d=new Proxy({measureText:s=>({width:s.length*10})},{get:(o,k)=>k in o?o[k]:()=>{}});
  const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,disabled:false,checked:false,style:{},events:{},classList:{toggle(){}},setAttribute(){},removeAttribute(){},addEventListener(k,f){(this.events[k]??=[]).push(f);},getContext:()=>context2d,focus(options){this.focusOptions=options;},showModal(){this.open=true;},close(){this.open=false;},querySelectorAll:()=>[],setPointerCapture(){},hasPointerCapture:()=>true,releasePointerCapture(){},scrollLeft:0,scrollTop:0,getBoundingClientRect:()=>({left:0,top:0,width:1000,height:700}),clientWidth:1200,clientHeight:900});return nodes.get(id);};
- const sandbox={documentEvents,windowEvents,...measurement,assert,console,Intl,Math,Number,JSON,structuredClone,devicePixelRatio:1,setTimeout:()=>1,clearTimeout(){},document:{querySelector:()=>null,getElementById:node,querySelectorAll:()=>[],addEventListener(k,f){documentEvents[k]=f;}},window:{addEventListener(k,f){windowEvents[k]=f;}},ResizeObserver:class{observe(){}}};
- vm.createContext(sandbox);
- const source=fs.readFileSync(new URL('../dist/app.js',import.meta.url),'utf8').replace(/^import[^\n]+\n/,'');
+ return vm.createContext({documentEvents,windowEvents,localStorage,...measurement,assert,console,Intl,Math,Number,JSON,structuredClone,devicePixelRatio:1,setTimeout:()=>1,clearTimeout(){},document:{querySelector:()=>null,getElementById:node,querySelectorAll:()=>[],addEventListener(k,f){documentEvents[k]=f;}},window:{addEventListener(k,f){windowEvents[k]=f;}},ResizeObserver:class{observe(){}}});
+}
+
+test('editor recalculates, calibrates and restores scale through undo',()=>{
  vm.runInContext(source+`
 
  image={naturalWidth:1000,naturalHeight:700}; scale={source:'px',distance:200,real:100,unit:'µm',dpi:96};
@@ -48,5 +51,46 @@ test('editor recalculates, calibrates and restores scale through undo',()=>{
  viewport.events.pointerdown[0](down);viewport.events.pointermove[0]({pointerId:9,buttons:0});assert.equal(pan,null);
  const menu={preventDefault(){this.prevented=true;}};viewport.events.contextmenu[0](menu);assert.equal(menu.prevented,true);
  const space=event('Space');documentEvents.keydown(space);assert.notEqual(space.prevented,true);viewport.events.pointerdown[0]({...down,button:0});assert.equal(pan,null);windowEvents.blur();
-   `,sandbox);
+   `,editorContext());
+});
+
+test('CSV export uses saved settings after reload and closing the dialog discards edits', async () => {
+ const saved = new Map([['razmer.shortcuts','{"zoom":"KeyX"}']]);
+ const storage = {getItem:key => saved.get(key) ?? null,setItem:(key,value) => saved.set(key,value)};
+ vm.runInContext(source+`
+   $('csv-settings-open').events.click[0]();
+   assert.equal($('csv-preview').textContent,'1234.50,-9876.25');
+   $('csv-thousands').value='.';
+   $('csv-thousands').events.change[0]();
+   assert.equal($('csv-save').disabled,true);
+   $('csv-decimal').value=',';
+   $('csv-decimal').events.change[0]();
+   $('csv-delimiter').value=';';
+   $('csv-form').events.submit[0]({preventDefault(){}});
+   $('csv-settings-open').events.click[0]();
+   $('csv-reset').events.click[0]();
+   $('csv-close').events.click[0]();
+ `,editorContext(storage));
+ assert.deepEqual(JSON.parse(saved.get('razmer.csv')),{delimiter:';',thousands:'.',decimal:','});
+ assert.equal(saved.get('razmer.shortcuts'),'{"zoom":"KeyX"}');
+ const reloaded = editorContext(storage);
+ let exported;
+ reloaded.Blob = Blob;
+ reloaded.URL = {createObjectURL(blob){exported=blob;return 'blob:csv';}};
+ reloaded.document.createElement = () => ({click(){},remove(){}});
+ reloaded.document.body = {appendChild(){}};
+ for(const [field,value] of [['delimiter',';'],['thousands','.'],['decimal',',']]){
+   reloaded.document.getElementById('csv-'+field).options = [{value}];
+ }
+ vm.runInContext(source+`
+   $('csv-settings-open').events.click[0]();
+   assert.equal($('csv-preview').textContent,'1.234,50;-9.876,25');
+   assert.equal(shortcuts.zoom,'KeyX');
+   $('csv-close').events.click[0]();
+   image={naturalWidth:1000,naturalHeight:700};
+   filename='sample.png';
+   arrows=[{label:'1234,50 µm',color:'blue'},{label:'-9876,25 µm',color:'red'}];
+   $('export-csv').events.click[0]();
+ `,reloaded);
+ assert.equal(await exported.text(),'1.234,50;-9.876,25\r\n');
 });
