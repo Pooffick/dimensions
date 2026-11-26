@@ -50,8 +50,93 @@ test('editor recalculates, calibrates and restores scale through undo',()=>{
  viewport.events.pointerdown[0](down);viewport.events.pointercancel[0]({pointerId:9});assert.equal(pan,null);
  viewport.events.pointerdown[0](down);viewport.events.pointermove[0]({pointerId:9,buttons:0});assert.equal(pan,null);
  const menu={preventDefault(){this.prevented=true;}};viewport.events.contextmenu[0](menu);assert.equal(menu.prevented,true);
- const space=event('Space');documentEvents.keydown(space);assert.notEqual(space.prevented,true);viewport.events.pointerdown[0]({...down,button:0});assert.equal(pan,null);windowEvents.blur();
    `,editorContext());
+});
+
+test('holding Space pans with the left button and releases the drawing tool on keyup', () => {
+ vm.runInContext(source+`
+   const classes = new Map();
+   viewport.classList.toggle = (name,on) => classes.set(name,on);
+   const key = (target={matches:()=>false}) => ({code:'Space',target,preventDefault(){this.prevented=true;}});
+   const down = {button:0,pointerId:9,clientX:300,clientY:200,preventDefault(){},stopPropagation(){this.stopped=true;}};
+   const move = {pointerId:9,buttons:1,clientX:360,clientY:240,preventDefault(){}};
+   const emptySpace = key();
+   documentEvents.keydown(emptySpace);
+   assert.equal(emptySpace.prevented,undefined);
+   documentEvents.keyup(emptySpace);
+
+   image={naturalWidth:1000,naturalHeight:700};
+   zoom=2;viewport.scrollLeft=400;viewport.scrollTop=300;setTool('arrow');sync();
+   const zoomButton = {matches:selector=>selector.includes('button'),closest(){return this;}};
+   for(const target of [{matches:selector=>selector==='input,select,textarea'},zoomButton]){
+     const space = key(target);
+     documentEvents.keydown(space);
+     assert.equal(space.prevented,undefined);
+     viewport.events.pointerdown[0](down);
+     assert.equal(pan,null);
+   }
+
+   documentEvents.pointerdown({target:zoomButton});
+   const space=key(zoomButton);
+   documentEvents.keydown(space);
+   assert.equal(space.prevented,true);
+   assert.equal(classes.get('pan-ready'),true);
+   viewport.events.pointerdown[0](down);
+   assert.equal(down.stopped,true);
+   assert.equal(drag,null);
+   assert.equal(classes.get('panning'),true);
+   viewport.events.pointermove[0](move);
+   assert.equal(viewport.scrollLeft,340);
+   assert.equal(viewport.scrollTop,260);
+   assert.equal(history.length,0);
+
+   viewport.events.pointerup[0](move);
+   assert.equal(pan,null);
+   assert.equal(classes.get('pan-ready'),true);
+   viewport.events.pointerdown[0](down);
+   documentEvents.keyup(space);
+   assert.equal(pan,null);
+   assert.equal(classes.get('pan-ready'),false);
+   viewport.events.pointermove[0]({...move,clientX:500,clientY:500});
+   assert.equal(viewport.scrollLeft,340);
+   assert.equal(viewport.scrollTop,260);
+
+   viewport.events.pointerdown[0](down);
+   assert.equal(pan,null);
+   canvas.events.pointerdown[0](down);
+   assert.equal(drag.kind,'draw');
+   assert.equal(arrows.length,1);
+ `,editorContext());
+});
+
+test('the pan shortcut can be reassigned without replacing existing saved shortcuts', () => {
+ const saved = new Map([['razmer.shortcuts','{"zoom":"Space","fit":"KeyQ"}']]);
+ const storage = {getItem:key => saved.get(key) ?? null,setItem:(key,value) => saved.set(key,value)};
+ vm.runInContext(source+`
+   assert.equal(shortcuts.pan,'');
+   assert.equal(shortcuts.zoom,'Space');
+   assert.equal(shortcuts.fit,'KeyQ');
+   $('hotkeys-open').events.click[0]();
+   recording='pan';
+   documentEvents.keydown({code:'Space',preventDefault(){}});
+   assert.ok($('hotkey-error').textContent);
+   documentEvents.keydown({code:'KeyH',shiftKey:true,preventDefault(){}});
+   $('hotkeys-save').events.click[0]();
+ `,editorContext(storage));
+ vm.runInContext(source+`
+   assert.equal(shortcuts.pan,'Shift+KeyH');
+   assert.equal(shortcuts.zoom,'Space');
+   image={naturalWidth:1000,naturalHeight:700};
+   const down = {button:0,shiftKey:true,pointerId:9,clientX:300,clientY:200,preventDefault(){},stopPropagation(){}};
+   documentEvents.keydown({code:'KeyH'});
+   viewport.events.pointerdown[0]({...down,shiftKey:false});
+   assert.equal(pan,null);
+   documentEvents.keydown({code:'ShiftLeft',shiftKey:true});
+   viewport.events.pointerdown[0](down);
+   assert.equal(pan.button,0);
+   documentEvents.keyup({code:'ShiftLeft',shiftKey:false});
+   assert.equal(pan,null);
+ `,editorContext(storage));
 });
 
 test('CSV export uses saved settings after reload and closing the dialog discards edits', async () => {

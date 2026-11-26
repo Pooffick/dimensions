@@ -122,7 +122,7 @@ async function loadFile(file) {
   try {
     next.src=url;await next.decode();if(request!==loadSerial)return;
     if(next.naturalWidth*next.naturalHeight>40000000 || Math.max(next.naturalWidth,next.naturalHeight)>16000)throw new Error('too-large');
-    stopPan();drag=null;image=next;filename=file.name;arrows=[];selected=null;history=[];future=[];columnColors=[];
+    resetNavigation();drag=null;image=next;filename=file.name;arrows=[];selected=null;history=[];future=[];columnColors=[];
     checkedArrows.clear();
     $('empty').hidden=true;$('canvas-wrap').hidden=false;
     $('image-info').textContent=`${filename} · ${image.naturalWidth} × ${image.naturalHeight} px`;
@@ -393,23 +393,34 @@ $('measurements-undo').addEventListener('click',undo);
 $('measurements-redo').addEventListener('click',redo);
 
 // Custom shortcuts are device-local preferences.
-const shortcutDefaults={select:'KeyV',arrow:'KeyA',remove:'Delete',undo:'Mod+KeyZ',redo:'Mod+Shift+KeyZ',duplicate:'Mod+KeyD',fit:'KeyF',calibrate:'KeyC',zoom:'KeyZ'};
-const shortcutLabels={select:'Выделение',arrow:'Новая стрелка',remove:'Удалить стрелку',undo:'Отменить',redo:'Повторить',duplicate:'Дублировать',fit:'Вписать изображение',calibrate:'Калибровка',zoom:'Зум + колесо мыши'};
+const shortcutDefaults={select:'KeyV',arrow:'KeyA',remove:'Delete',undo:'Mod+KeyZ',redo:'Mod+Shift+KeyZ',duplicate:'Mod+KeyD',fit:'KeyF',calibrate:'KeyC',zoom:'KeyZ',pan:'Space'};
+const shortcutLabels={select:'Выделение',arrow:'Новая стрелка',remove:'Удалить стрелку',undo:'Отменить',redo:'Повторить',duplicate:'Дублировать',fit:'Вписать изображение',calibrate:'Калибровка',zoom:'Зум + колесо мыши',pan:'Перемещение изображения + ЛКМ'};
 let shortcuts={...shortcutDefaults},shortcutDraft={},recording=null;
 const pressedKeys=new Set();
 const validBinding=value=>typeof value==='string' && /^(Mod\+)?(Alt\+)?(Shift\+)?(Key[A-Z]|Digit[0-9]|Delete|Backspace|Space|ArrowUp|ArrowDown|ArrowLeft|ArrowRight|Home|End)$/.test(value);
 try{
   const saved=JSON.parse(localStorage.getItem('razmer.shortcuts')||'null');
   if(saved){
-    const merged={...shortcutDefaults};for(const key of Object.keys(merged))if(validBinding(saved[key]))merged[key]=saved[key];
-    if(new Set(Object.values(merged)).size===Object.keys(merged).length)shortcuts=merged;
+    const {pan: defaultPan, ...merged} = shortcutDefaults;
+    for(const key of Object.keys(merged))if(validBinding(saved[key]))merged[key]=saved[key];
+    const assigned = new Set(Object.values(merged));
+    if(assigned.size === Object.keys(merged).length){
+      const panBinding = validBinding(saved.pan) && !assigned.has(saved.pan) ? saved.pan : defaultPan;
+      shortcuts = {...merged,pan:assigned.has(panBinding) ? '' : panBinding};
+    }
   }
 }catch{}
-function binding(e){return (e.ctrlKey||e.metaKey?'Mod+':'')+(e.altKey?'Alt+':'')+(e.shiftKey?'Shift+':'')+e.code;}
-function bindingLabel(value){return value.split('+').map(key=>key==='Mod'?'Ctrl / ⌘':key.replace('Key','').replace('Digit','').replace('Space','Пробел')).join(' + ');}
+function binding(e,code=e.code){return (e.ctrlKey||e.metaKey?'Mod+':'')+(e.altKey?'Alt+':'')+(e.shiftKey?'Shift+':'')+code;}
+function shortcutHeld(value,event) {
+  const code = value.split('+').at(-1);
+  return pressedKeys.has(code) && binding(event,code) === value;
+}
+function bindingLabel(value){return value ? value.split('+').map(key=>key==='Mod'?'Ctrl / ⌘':key.replace('Key','').replace('Digit','').replace('Space','Пробел')).join(' + ') : 'Не назначено';}
 function refreshShortcutHints(){
   for(const [id,action] of Object.entries({'select-tool':'select','arrow-tool':'arrow',undo:'undo',redo:'redo',fit:'fit',calibrate:'calibrate',duplicate:'duplicate',delete:'remove'}))$(id).title=shortcutLabels[action]+' ('+bindingLabel(shortcuts[action])+')';
-  const tip=document.querySelector('.status-tip');if(tip)tip.textContent=bindingLabel(shortcuts.arrow)+' — стрелка · '+bindingLabel(shortcuts.zoom)+' + колесо — зум · '+'ПКМ — перемещение';
+  const tip=document.querySelector('.status-tip');
+  const panHint = shortcuts.pan ? `${bindingLabel(shortcuts.pan)} + ЛКМ` : 'ПКМ';
+  if(tip)tip.textContent=`${bindingLabel(shortcuts.arrow)} — стрелка · ${bindingLabel(shortcuts.zoom)} + колесо — зум · ${panHint} — перемещение`;
 }
 function drawShortcutRows(){
   $('hotkey-list').innerHTML=Object.keys(shortcutDefaults).map(action=>'<div class="hotkey-row"><span>'+shortcutLabels[action]+'</span><button type="button" class="button" data-shortcut="'+action+'"></button></div>').join('');
@@ -420,7 +431,7 @@ function drawShortcutRows(){
 }
 $('hotkeys-open').addEventListener('click',()=>{shortcutDraft={...shortcuts};recording=null;resetNavigation();$('hotkey-error').textContent='';drawShortcutRows();$('hotkeys-dialog').showModal();});
 $('hotkeys-close').addEventListener('click',()=>$('hotkeys-dialog').close());
-$('hotkeys-dialog').addEventListener('close',()=>{recording=null;pressedKeys.clear();$('hotkeys-open').focus();});
+$('hotkeys-dialog').addEventListener('close',()=>{recording=null;resetNavigation();$('hotkeys-open').focus();});
 $('hotkeys-dialog').addEventListener('cancel',e=>{if(recording){e.preventDefault();recording=null;drawShortcutRows();}});
 $('hotkeys-reset').addEventListener('click',()=>{shortcutDraft={...shortcutDefaults};recording=null;$('hotkey-error').textContent='';drawShortcutRows();});
 $('hotkeys-save').addEventListener('click',()=>{shortcuts={...shortcutDraft};try{localStorage.setItem('razmer.shortcuts',JSON.stringify(shortcuts));}catch{toast('Настройки применены, но браузер не разрешил их сохранить.');}refreshShortcutHints();$('hotkeys-dialog').close();});
@@ -483,7 +494,13 @@ $('csv-form').addEventListener('submit',event => {
 });
 
 function isEditing(target){return target?.isContentEditable || target?.matches?.('input,select,textarea');}
+// Space activates keyboard-focused controls and can pan after a toolbar click.
+const spaceControls = 'button,summary,[role="button"]';
+let clickedControl = null;
+document.addEventListener('pointerdown',e=>{clickedControl=e.target?.closest?.(spaceControls) ?? null;},true);
+document.addEventListener('focusin',e=>{if(e.target!==clickedControl)clickedControl=null;});
 document.addEventListener('keydown',e=>{
+  if(e.code==='Tab')clickedControl=null;
   if(csvDialog.open)return;
   if($('hotkeys-dialog').open){
     if(!recording || e.code==='Escape' || e.code==='Tab')return;
@@ -503,14 +520,21 @@ document.addEventListener('keydown',e=>{
     return;
   }
   if(isEditing(e.target))return;
+  const value = binding(e);
+  if(value === 'Space' && value === shortcuts.pan && e.target !== clickedControl && e.target?.matches?.(spaceControls))return;
   pressedKeys.add(e.code);
   if(e.code==='Escape'){
     resetNavigation();
     if(drag){const calibration=drag.kind==='calibrate';drag=null;if(!calibration && history.length)restore(history.pop());}
     selected=null;setTool('select');sync();render();return;
   }
+  updatePanShortcut(e);
+  if(value === shortcuts.pan){
+    if(image)e.preventDefault();
+    return;
+  }
   if(drag || pan)return;
-  const action=Object.keys(shortcuts).find(k=>shortcuts[k]===binding(e));if(!action)return;
+  const action=Object.keys(shortcuts).find(k=>shortcuts[k]===value);if(!action)return;
   e.preventDefault();if(e.repeat || action==='zoom')return;
   if(action==='undo')undo();else if(action==='redo')redo();else if(action==='remove')remove();else if(action==='select')setTool('select');
   else if(image){const id={arrow:'add',duplicate:'duplicate',fit:'fit',calibrate:'calibrate'}[action];if(id)$(id).click();}
@@ -519,28 +543,34 @@ function stopPan(){
   const pointerId=pan?.pointerId;pan=null;viewport.classList.toggle('panning',false);
   if(pointerId!==undefined && viewport.hasPointerCapture(pointerId))viewport.releasePointerCapture(pointerId);
 }
-function resetNavigation(){pressedKeys.clear();stopPan();}
-document.addEventListener('keyup',e=>pressedKeys.delete(e.code));
+function updatePanShortcut(e) {
+  const ready = Boolean(image && shortcutHeld(shortcuts.pan,e));
+  viewport.classList.toggle('pan-ready',ready);
+  if(!ready && pan?.button === 0)stopPan();
+}
+function resetNavigation(){pressedKeys.clear();viewport.classList.toggle('pan-ready',false);stopPan();}
+document.addEventListener('keyup',e=>{pressedKeys.delete(e.code);updatePanShortcut(e);});
 window.addEventListener('blur',resetNavigation);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)resetNavigation();});
 viewport.addEventListener('contextmenu',e=>{if(image)e.preventDefault();});
-// Capture before the canvas so a right-button drag never creates or edits an arrow.
+// Capture navigation gestures before the canvas can begin editing an arrow.
 viewport.addEventListener('pointerdown',e=>{
-  if(!image || drag || pan || e.button!==2 || $('hotkeys-dialog').open)return;
+  if(!image || drag || pan || $('hotkeys-dialog').open)return;
+  if(e.button!==2 && (e.button!==0 || !shortcutHeld(shortcuts.pan,e)))return;
   e.preventDefault();e.stopPropagation();canvas.focus({preventScroll:true});
-  pan={pointerId:e.pointerId,x:e.clientX,y:e.clientY,left:viewport.scrollLeft,top:viewport.scrollTop};
+  pan={pointerId:e.pointerId,button:e.button,x:e.clientX,y:e.clientY,left:viewport.scrollLeft,top:viewport.scrollTop};
   viewport.setPointerCapture(e.pointerId);viewport.classList.toggle('panning',true);
 },true);
 viewport.addEventListener('pointermove',e=>{
   if(!pan || e.pointerId!==pan.pointerId)return;
-  if(!(e.buttons & 2)){stopPan();return;}e.preventDefault();
+  const buttonMask = pan.button === 0 ? 1 : 2;
+  if(!(e.buttons & buttonMask)){stopPan();return;}e.preventDefault();
   viewport.scrollLeft=pan.left-(e.clientX-pan.x);viewport.scrollTop=pan.top-(e.clientY-pan.y);
 });
 for(const type of ['pointerup','pointercancel','lostpointercapture'])viewport.addEventListener(type,e=>{if(pan && e.pointerId===pan.pointerId)stopPan();});
 viewport.addEventListener('wheel',e=>{
   if(!image || drag || pan || $('hotkeys-dialog').open || isEditing(document.activeElement))return;
-  const key=shortcuts.zoom.split('+').at(-1);
-  if(!pressedKeys.has(key) || binding({...e,code:key,ctrlKey:e.ctrlKey,metaKey:e.metaKey,altKey:e.altKey,shiftKey:e.shiftKey})!==shortcuts.zoom)return;
+  if(!shortcutHeld(shortcuts.zoom,e))return;
   e.preventDefault();const before=canvas.getBoundingClientRect(),px=(e.clientX-before.left)/zoom,py=(e.clientY-before.top)/zoom;
   const delta=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?viewport.clientHeight:1);
   changeZoom(Math.exp(-Math.max(-500,Math.min(500,delta))*.002));
