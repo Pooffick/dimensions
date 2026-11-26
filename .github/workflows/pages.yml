@@ -5,24 +5,21 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  upload:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
     env:
       # Reruns keep older artifacts under the same workflow run ID.
       PAGES_ARTIFACT: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      artifact_name: ${{ env.PAGES_ARTIFACT }}
 
     steps:
       - name: Checkout
@@ -37,8 +34,32 @@ jobs:
           name: ${{ env.PAGES_ARTIFACT }}
           path: dist
 
+  deploy:
+    needs: upload
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.retry.outputs.page_url || steps.deployment.outputs.page_url }}
+
+    steps:
       - name: Deploy
         id: deployment
+        continue-on-error: true
         uses: actions/deploy-pages@v4
         with:
-          artifact_name: ${{ env.PAGES_ARTIFACT }}
+          artifact_name: ${{ needs.upload.outputs.artifact_name }}
+
+      # The Pages artifact listing can lag behind a successful upload.
+      - name: Give the artifact time to appear
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 60
+
+      - name: Retry deployment
+        id: retry
+        if: steps.deployment.outcome == 'failure'
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: ${{ needs.upload.outputs.artifact_name }}
